@@ -118,6 +118,14 @@ class StrictResearchTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "point_in_time_adjusted"):
             load_manifest(self.manifest)
 
+    def test_rejects_mislabeled_price_file(self):
+        path = self.data / "000000.csv"
+        frame = pd.read_csv(path, dtype={"symbol": "string"})
+        frame.loc[0, "symbol"] = "999999"
+        frame.to_csv(path, index=False)
+        with self.assertRaisesRegex(ValueError, "symbol column does not match"):
+            load_prices(self.data, reject_bad_prices=True)
+
     def test_missing_member_bar_needs_explicit_suspension(self):
         prices = load_prices(self.data, reject_bad_prices=True)
         prices = prices.loc[~((prices.symbol == "000000") & (prices.date == self.dates[65]))]

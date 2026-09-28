@@ -30,6 +30,9 @@ def load_prices(data_dir: Path, symbols_json: Path | None = None,
         missing = REQUIRED - set(frame.columns)
         if missing:
             raise ValueError(f"{path.name} is missing {sorted(missing)}")
+        if reject_bad_prices:
+            if "symbol" not in frame.columns or not frame["symbol"].str.zfill(6).eq(path.stem.zfill(6)).all():
+                raise ValueError(f"{path.name} symbol column does not match its filename")
         frame["symbol"] = path.stem.zfill(6)
         frame["date"] = pd.to_datetime(frame["date"], errors="raise")
         if frame["date"].duplicated().any():
