@@ -40,6 +40,12 @@ class ResearchTimingTests(unittest.TestCase):
         target = panel.loc[(panel.symbol == "000000") & (panel.date == self.dates[65])].iloc[0]
         self.assertTrue(np.isnan(target.fwd_ret))
 
+    def test_supplied_calendar_preserves_market_wide_missing_day(self):
+        prices = self.prices.loc[self.prices.date != self.dates[66]]
+        panel = build_panel(prices, calendar=pd.DatetimeIndex(self.dates, name="date"))
+        target = panel.loc[(panel.symbol == "000000") & (panel.date == self.dates[65])].iloc[0]
+        self.assertTrue(np.isnan(target.fwd_ret))
+
     def test_filter_is_as_of_and_membership_exact(self):
         panel = build_panel(self.prices)
         membership = pd.DataFrame({"date": [self.dates[65]], "symbol": ["000000"]})

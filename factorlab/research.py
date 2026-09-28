@@ -63,7 +63,10 @@ def _turnover(previous: dict[str, float], current: dict[str, float]) -> float:
 
 
 def portfolio_periods(panel: pd.DataFrame, horizon: int = 5, cost_bps: float = 10,
-                      min_stocks: int = 20) -> pd.DataFrame:
+                      min_stocks: int = 20, *, strict: bool = False,
+                      execution: pd.DataFrame | None = None,
+                      benchmark_returns: pd.Series | None = None,
+                      rebalance_dates: pd.DatetimeIndex | None = None) -> pd.DataFrame:
     """Equal-weight top fifth; signals at close t, execution at t+1 open.
 
     Missing future bars are valued as zero period return and counted explicitly.
@@ -71,14 +74,21 @@ def portfolio_periods(panel: pd.DataFrame, horizon: int = 5, cost_bps: float = 1
     """
     if cost_bps < 0:
         raise ValueError("cost_bps must be nonnegative")
-    dates = sorted(panel["date"].unique())
+    if strict and (execution is None or benchmark_returns is None or rebalance_dates is None):
+        raise ValueError("Strict mode needs execution flags, external benchmark and rebalance calendar")
+    dates = sorted(rebalance_dates) if rebalance_dates is not None else sorted(panel["date"].unique())
+    execution_index = execution.set_index(["date", "symbol"]) if execution is not None else None
     rows = []
     previous: dict[str, float] = {}
     for date in dates[::horizon]:
         group = panel.loc[panel["date"] == date].dropna(subset=list(FACTOR_COLUMNS)).copy()
         if len(group) < min_stocks:
+            if strict:
+                raise ValueError(f"Only {len(group)} eligible stocks on {pd.Timestamp(date).date()}")
             continue
         if pd.isna(group["exit_date"].iloc[0]):
+            if strict:
+                raise ValueError(f"No complete holding horizon after {pd.Timestamp(date).date()}")
             continue
         for factor in FACTOR_COLUMNS:
             group[f"rank_{factor}"] = group[factor].rank(pct=True, method="average")
@@ -86,11 +96,32 @@ def portfolio_periods(panel: pd.DataFrame, horizon: int = 5, cost_bps: float = 1
         group = group.sort_values(["score", "symbol"], ascending=[False, True])
         n_top = max(1, math.ceil(len(group) * 0.2))
         top = group.head(n_top)
+        if strict:
+            missing = top.loc[top["fwd_ret"].isna()]
+            if not missing.empty:
+                raise ValueError(f"Missing future open for selected {missing.iloc[0]['symbol']} on {pd.Timestamp(date).date()}")
         current = _weights(top["symbol"])
+        if strict:
+            trade_date = top["entry_date"].iloc[0]
+            for symbol in previous.keys() | current.keys():
+                delta = current.get(symbol, 0) - previous.get(symbol, 0)
+                if abs(delta) < 1e-10:
+                    continue
+                flag = "can_buy_open" if delta > 0 else "can_sell_open"
+                key = (trade_date, symbol)
+                if key not in execution_index.index:
+                    raise ValueError(f"Missing {flag} for {symbol} on {trade_date.date()}")
+                if not bool(execution_index.loc[key, flag]):
+                    raise ValueError(f"Blocked {flag} for {symbol} on {trade_date.date()}; fill model required")
         turnover = _turnover(previous, current)
         realized = top["fwd_ret"].fillna(0).to_numpy(dtype=float)
         gross = float(realized.mean())
-        benchmark = float(group["fwd_ret"].fillna(0).mean())
+        if benchmark_returns is not None:
+            benchmark = float(benchmark_returns.loc[date])
+            if not np.isfinite(benchmark):
+                raise ValueError(f"Missing benchmark holding return on {pd.Timestamp(date).date()}")
+        else:
+            benchmark = float(group["fwd_ret"].fillna(0).mean())
         rows.append({"date": date, "exit_date": top["exit_date"].iloc[0],
                      "universe_n": len(group), "selected_n": len(top),
                      "missing_selected": int(top["fwd_ret"].isna().sum()),

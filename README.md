@@ -21,7 +21,7 @@
 2. 各股票先对齐交易日历。停牌或缺失数据不会把未来收益偷换成该股下一笔可用记录的收益。
 3. 单因子每日 Spearman Rank IC 的均值使用 Newey–West 标准误统计量，缓解 5 日标签重叠引起的自相关。训练段的标签必须在测试段开始前结束。
 4. 组合每 5 个市场交易日调仓一次，买入因子综合排名前 20% 的股票，等权持有。以上一持有期收益漂移后的权重计算调仓交易额，对每单位买卖交易额扣 10 bps 的示例成本；同时报告相同股票池的等权基准。
-5. 信号日只用当时可见的价格、成交额和成分资格过滤。未来开盘缺失的头寸按该期 0 收益计价并单独计数；这是研究近似，不能当作停牌/涨跌停撮合模型。
+5. 信号日只用当时可见的价格、成交额和成分资格过滤。普通演示模式把未来开盘缺失头寸按该期 0 收益计价并单独计数。严格研究模式会拒绝这类情况及不可执行开盘交易，不会生成伪造的组合业绩。
 
 ### 数据与股票池口径
 
@@ -37,7 +37,7 @@
 py -3 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e .
 .\.venv\Scripts\python.exe examples\make_demo_data.py
-.\.venv\Scripts\python.exe -m factorlab.cli --data-dir data\demo --synthetic --start 2022-04-01 --end 2025-05-30 --test-start 2024-01-01 --min-amount 0
+.\.venv\Scripts\python.exe -m factorlab.cli --data-dir data\demo\prices --synthetic --start 2022-04-01 --end 2025-05-30 --test-start 2024-01-01 --min-amount 0
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 ```
 
@@ -53,11 +53,22 @@ py -3 -m venv .venv
 
 若提供真正的逐日历史成分文件，改用 `--membership-csv C:\path\to\daily_membership.csv`。对于大型股票池，运行时间主要消耗在按日计算截面相关系数；无需 GPU。
 
-输出：`summary.json`（机器可读指标）、`ic_daily.csv`（逐日逐因子 IC）、`portfolio_periods.csv`（每次调仓的收益与成本）、`report.md`（可读摘要）。运行生成的行情和结果默认被 `.gitignore` 排除。可审阅的真实样本汇总见 [results/observed-run.md](results/observed-run.md)。
+严格研究模式需要有来源的日历、逐日历史成分、发布时间、开盘交易状态和外部指数。合成数据可以完整演示这些输入；实际运行前请阅读 [严格研究数据契约](docs/strict-research.md)。此模式通过软件检查也不等于已获生产验收。
+
+```powershell
+.\.venv\Scripts\python.exe -m factorlab.cli --strict --synthetic `
+  --data-dir data\demo\prices --calendar-csv data\demo\calendar.csv `
+  --membership-csv data\demo\membership.csv --execution-csv data\demo\execution.csv `
+  --benchmark-csv data\demo\benchmark.csv --manifest data\demo\manifest.json `
+  --start 2022-04-01 --end 2025-05-30 --test-start 2024-01-01 --min-amount 0
+```
+
+输出：`summary.json`（机器可读指标）、`ic_daily.csv`（逐日逐因子 IC）、`portfolio_periods.csv`（每次调仓的收益与成本）、`report.md`（可读摘要）；严格模式另有 `audit.json`（输入哈希与运行 ID）。运行生成的行情和结果默认被 `.gitignore` 排除。可审阅的真实样本汇总见 [results/observed-run.md](results/observed-run.md)。
 
 ## 项目结构
 
 - `factorlab/core.py`：数据校验、交易日对齐、四个因子与未来执行收益标签。
+- `factorlab/audit.py`：严格研究模式的数据时间戳、来源、成分资格、外部基准与开盘状态校验。
 - `factorlab/research.py`：Rank IC、Newey–West 统计量、定期调仓和费用。
 - `factorlab/cli.py`：完整研究流程与结果导出。
 - `tests/`：时间对齐、缺失交易日、股票池资格和成本测试。
