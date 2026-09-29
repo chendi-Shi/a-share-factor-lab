@@ -18,6 +18,12 @@
 
 [Tushare Pro 的历史成分](https://tushare.pro/document/2?doc_id=96)、[停复牌](https://tushare.pro/document/2?doc_id=214)、[每日涨跌停价](https://tushare.pro/document/2?doc_id=183)和[复权因子](https://tushare.pro/document/2?doc_id=28)接口可作为后续交叉核验候选，官方文档列出至少 2000 积分门槛。这些接口的历史数据也需要进一步核验公开时间、修订版本和使用权；当前没有相应凭据，因此项目没有把它们伪装成已经接入。
 
+## 可核实的数据获取路径
+
+港城大学[会计学系研究设施页面](https://www.cb.cityu.edu.hk/ac/research/facilities/)列出 CSMAR 中国市场与财务数据，但明确描述的是**教职员**可用；这不能证明数据科学硕士有同样权限。港城大学[图书馆电子资源访问说明](https://www.cityu.edu.hk/lib/instruct/guides/eresguid/remote.htm)说明在校学生可登录已订阅的电子资源，实际可访问哪些数据库仍以个人账号、订阅范围和许可条款为准。若获准访问，先在图书馆数据库目录核对 CSMAR 的订阅模块、下载范围和是否允许将派生统计量公开；原始数据继续只保存在本地。
+
+接入任何新来源时，先保留原始导出文件及许可/字段说明，再逐项核验：每日历史成分的生效日期与当时可知时间，包含退市股的未复权 OHLCV 和公司行动的历史版本，停牌与涨跌停在开盘前的可知时间，独立指数日线，以及覆盖整个回测区间的交易日历。只有证据足以填写严格输入的 `available_at`、`known_at`、`observed_at`，并完成交易和账本验收，才能考虑把生产门槛改为通过；不能用下载时间回填历史时间戳。
+
 ## 复现检查
 
 ```powershell
