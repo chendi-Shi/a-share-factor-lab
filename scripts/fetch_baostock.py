@@ -16,7 +16,7 @@ from importlib.metadata import version
 from pathlib import Path
 
 
-PRICE_FIELDS = "date,code,open,high,low,close,volume,amount,adjustflag,tradestatus,isST"
+PRICE_FIELDS = "date,code,open,high,low,close,preclose,volume,amount,adjustflag,tradestatus,isST"
 INDEX_FIELDS = "date,code,open,high,low,close,volume,amount"
 
 
@@ -105,12 +105,14 @@ def main() -> None:
 
     output = args.output_dir
     output.mkdir(parents=True, exist_ok=True)
-    request = {"start": args.start, "end": args.end, "lookback_days": args.lookback_days,
+    request = {"schema_version": 2, "start": args.start, "end": args.end, "lookback_days": args.lookback_days,
                "symbols": requested}
     request_path = output / "request.json"
     if request_path.exists() and json.loads(request_path.read_text(encoding="utf-8")) != request:
         raise ValueError(f"{output} contains a different request; use another --output-dir")
     request_path.write_text(json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+    metadata_path = output / "source_metadata.json"
+    metadata_path.unlink(missing_ok=True)
     login = bs.login()
     if login.error_code != "0":
         raise RuntimeError(f"BaoStock login failed: {login.error_code} {login.error_msg}")
@@ -174,7 +176,7 @@ def main() -> None:
                                                  frequency="d", adjustflag="3"))
                 if not bars:
                     raise ValueError(f"{code}: no raw bars in requested range")
-                write_csv(price_path, ["date", "symbol", "open", "high", "low", "close", "amount",
+                write_csv(price_path, ["date", "symbol", "open", "high", "low", "close", "preclose", "amount",
                                        "volume", "tradestatus", "isST", "adjustflag"],
                           [{**bar, "symbol": symbol} for bar in bars])
             adjust_path = output / "adjust_factors" / f"{symbol}.csv"
@@ -207,15 +209,15 @@ def main() -> None:
             "price_start": price_start, "price_end": args.end,
             "trading_days": len(trading_dates), "historical_universe_symbols": len(universe),
             "downloaded_price_symbols": len(codes), "price_sample_only": len(codes) != len(universe),
-            "price_basis": "unadjusted", "data_redistribution_rights": "not verified",
+            "price_basis": "unadjusted", "raw_bar_schema_version": 2,
+            "data_redistribution_rights": "not verified",
             "strict_mode_eligible": False,
             "limitations": ["No verified historical publication/known_at timestamps",
                             "No point-in-time adjustment vintages",
                             "No open-auction limit or fillability flags",
                             "Raw prices jump across corporate actions"],
         }
-        (output / "source_metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2),
-                                                          encoding="utf-8")
+        metadata_path.write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps(metadata, ensure_ascii=False, indent=2))
     finally:
         bs.logout()

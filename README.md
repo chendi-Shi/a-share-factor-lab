@@ -33,6 +33,8 @@
 
 现已提供 [BaoStock 历史数据采集与实测记录](docs/baostock-data.md)：可在本地下载逐日历史中证 500 成分、已退市股票旧行情、交易日历与指数日线。该来源仍缺少可核验的发布时间、历史复权版本和开盘成交状态；采集结果不能直接作为严格模式或可交易收益证据。
 
+[生产验收状态](docs/production-acceptance.md)列出可复现的质量检查、逐日持仓账本与尚未通过的数据和交易门槛。当前状态为**未通过生产验收**；合成账本与免费数据样本只用于检验研究程序。
+
 ## 快速运行
 
 ```powershell
@@ -72,6 +74,9 @@ py -3 -m venv .venv
 - `factorlab/core.py`：数据校验、交易日对齐、四个因子与未来执行收益标签。
 - `factorlab/audit.py`：严格研究模式的数据时间戳、来源、成分资格、外部基准与开盘状态校验。
 - `factorlab/research.py`：Rank IC、Newey–West 统计量、定期调仓和费用。
+- `factorlab/adjustments.py`：使用当日及此前前收参考价构建研究价格，保留原始价作筛选。
+- `factorlab/readiness.py`：历史数据完整性与生产验收门槛审计。
+- `factorlab/simulator.py`：现金、持仓、受阻订单与独立停牌估值的逐日账本。
 - `factorlab/cli.py`：完整研究流程与结果导出。
 - `tests/`：时间对齐、缺失交易日、股票池资格和成本测试。
 - `examples/`：确定性合成行情。

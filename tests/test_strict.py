@@ -1,3 +1,4 @@
+import hashlib
 import json
 import subprocess
 import sys
@@ -9,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from factorlab.audit import (load_benchmark_returns, load_execution_flags,
-                             load_manifest, validate_member_price_coverage,
+                             load_manifest, load_valuation_prices, validate_member_price_coverage,
                              validate_membership, validate_price_availability)
 from factorlab.core import build_panel, filter_signals, load_calendar, load_prices
 from factorlab.research import portfolio_periods
@@ -78,6 +79,32 @@ class StrictResearchTests(unittest.TestCase):
         self.assertTrue(summary["strict_validation"])
         self.assertEqual(summary["benchmark_mode"], "external index")
 
+    def test_event_research_cli_writes_cash_and_order_ledger(self):
+        output = self.root / "event_output"
+        script = Path(__file__).resolve().parents[1] / "scripts" / "run_event_research.py"
+        cmd = [sys.executable, str(script), "--synthetic",
+               "--data-dir", str(self.data), "--calendar-csv", str(self.calendar),
+               "--membership-csv", str(self.membership), "--execution-csv", str(self.execution),
+               "--benchmark-csv", str(self.benchmark), "--manifest", str(self.manifest),
+               "--start", str(self.dates[65].date()), "--end", str(self.dates[76].date()),
+               "--output-dir", str(output)]
+        run = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        summary = json.loads((output / "summary.json").read_text(encoding="utf-8"))
+        completion = json.loads((output / "complete.json").read_text(encoding="utf-8"))
+        ledger = pd.read_csv(output / "ledger.csv")
+        orders = pd.read_csv(output / "orders.csv")
+        positions = pd.read_csv(output / "positions.csv")
+        self.assertEqual(summary["engine"], "daily_open_fractional_units_v1")
+        self.assertTrue(summary["synthetic"])
+        self.assertFalse(summary["production_approved"])
+        self.assertEqual(len(completion["products_sha256"]), 6)
+        self.assertEqual(completion["products_sha256"]["ledger.csv"],
+                         hashlib.sha256((output / "ledger.csv").read_bytes()).hexdigest())
+        self.assertTrue(ledger["cash"].ge(0).all())
+        self.assertGreater(len(orders), 0)
+        self.assertGreater(len(positions), 0)
+
     def test_rejects_late_bar_and_missing_membership(self):
         frame = pd.read_csv(self.data / "000000.csv")
         frame.loc[0, "available_at"] = self.dates[1].strftime("%Y-%m-%dT10:00:00+08:00")
@@ -125,6 +152,13 @@ class StrictResearchTests(unittest.TestCase):
         frame.to_csv(path, index=False)
         with self.assertRaisesRegex(ValueError, "symbol column does not match"):
             load_prices(self.data, reject_bad_prices=True)
+
+    def test_valuation_requires_preopen_observation(self):
+        path = self.root / "valuation.csv"
+        pd.DataFrame([{"date": self.dates[65], "symbol": "000000", "price": 20,
+                       "observed_at": self.dates[65].strftime("%Y-%m-%dT10:00:00+08:00")}]).to_csv(path, index=False)
+        with self.assertRaisesRegex(ValueError, "after the open"):
+            load_valuation_prices(path, load_calendar(self.calendar))
 
     def test_missing_member_bar_needs_explicit_suspension(self):
         prices = load_prices(self.data, reject_bad_prices=True)

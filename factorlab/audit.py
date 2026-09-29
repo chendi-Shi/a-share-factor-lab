@@ -122,6 +122,27 @@ def load_execution_flags(path: Path, calendar: pd.DatetimeIndex) -> pd.DataFrame
     return frame[["date", "symbol", "can_buy_open", "can_sell_open"]]
 
 
+def load_valuation_prices(path: Path, calendar: pd.DatetimeIndex) -> pd.DataFrame:
+    """Explicit daily marks for held securities without an executable open."""
+    frame = pd.read_csv(path, dtype={"symbol": "string"})
+    required = {"date", "symbol", "price", "observed_at"}
+    if not required.issubset(frame.columns):
+        raise ValueError(f"Valuation CSV needs {sorted(required)}")
+    frame["date"] = pd.to_datetime(frame["date"], errors="raise")
+    frame["symbol"] = frame["symbol"].str.zfill(6)
+    frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
+    if frame.duplicated(["date", "symbol"]).any() or not frame["price"].gt(0).all():
+        raise ValueError("Valuation needs unique date,symbol and positive prices")
+    observed = _aware_utc(frame["observed_at"], "valuation.observed_at")
+    for date, seen in zip(frame["date"], observed):
+        if date not in calendar:
+            raise ValueError(f"Valuation date {date.date()} is outside calendar")
+        market_open = date.tz_localize("Asia/Shanghai") + pd.Timedelta(hours=9, minutes=30)
+        if seen > market_open:
+            raise ValueError(f"Valuation for {date.date()} was learned after the open")
+    return frame[["date", "symbol", "price"]]
+
+
 def validate_member_price_coverage(membership: pd.DataFrame, prices: pd.DataFrame,
                                    execution: pd.DataFrame, start: pd.Timestamp,
                                    end: pd.Timestamp) -> int:

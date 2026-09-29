@@ -23,6 +23,18 @@ py -3 -m venv .venv
 
 输出有 `calendar.csv`、`membership.csv`、`membership_observations.csv`、`prices_raw/`、`adjust_factors/`、`stock_basic.csv`、`benchmark.csv` 和 `source_metadata.json`。`--symbols` 只下载列出的股票价格；成分仍是全量，`source_metadata.json` 会把它标记为价格样本，不能将其作为完整股票池回测。
 
+采集器现在保存原始行情的 `preclose`。同一参数可断点续传；新增字段后的数据集使用版本 2，不会与此前没有 `preclose` 的缓存混用。2019-06-17 至 2019-06-25 的 `sh.600006` 独立实测样本涵盖 6 月 20 日除权：原始收盘价 4.93 元，前收参考价 4.85 元。按当日已出现的 `前一收盘价 / 当日前收参考价` 递推，研究价格约为 5.01；6 月 19 日之前的记录保持原值。
+
+```powershell
+.\.venv\Scripts\python.exe scripts\fetch_baostock.py `
+  --start 2019-06-17 --end 2019-06-25 --lookback-days 15 `
+  --symbols sh.600006 --output-dir data\baostock_corp_action
+.\.venv\Scripts\python.exe scripts\build_research_prices.py --dataset data\baostock_corp_action
+.\.venv\Scripts\python.exe scripts\audit_baostock.py --dataset data\baostock_corp_action
+```
+
+转换写入 `prices_research_adjusted/` 和原始文件哈希；审计写入 `readiness.json`。转换只使用当日及此前的 `preclose`，避免把未来除权因子回写到旧信号。它仍采用 BaoStock 的复权假设，不能代替公司行动现金流和可核验的历史数据版本。审计会把完整性与生产验收分别标记；免费数据缺少的时间戳和开盘成交证据使 `production_ready` 保持 `false`。
+
 ## 研究边界
 
 - `prices_raw/` 是不复权价格，除权日可能出现机械跳变；因子与持有期收益不能直接当作可交易组合收益。`adjust_factors/` 保存事件因子，尚未验证其历史修订版本或现金分红收益。BaoStock 的[复权因子说明](https://www.baostock.com/helpdocs/pdf/BaoStock%E5%A4%8D%E6%9D%83%E5%9B%A0%E5%AD%90%E7%AE%80%E4%BB%8B.pdf)也明确其涨跌幅复权法采用特定再投资假设。

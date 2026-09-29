@@ -39,7 +39,11 @@ def load_prices(data_dir: Path, symbols_json: Path | None = None,
             raise ValueError(f"{path.name} contains duplicate dates")
         for column in ("open", "high", "low", "close", "amount"):
             frame[column] = pd.to_numeric(frame[column], errors="coerce")
+        if "raw_close" in frame.columns:
+            frame["raw_close"] = pd.to_numeric(frame["raw_close"], errors="coerce")
         valid_prices = frame[["open", "high", "low", "close"]].gt(0).all(axis=1)
+        if "raw_close" in frame.columns:
+            valid_prices &= frame["raw_close"].gt(0)
         if reject_bad_prices:
             valid_prices &= frame["high"].ge(frame[["open", "close"]].max(axis=1))
             valid_prices &= frame["low"].le(frame[["open", "close"]].min(axis=1))
@@ -49,7 +53,10 @@ def load_prices(data_dir: Path, symbols_json: Path | None = None,
             raise ValueError(f"{path.name} has invalid OHLC/amount on {bad}; strict mode refuses to drop rows")
         bad_price_rows += int((~valid_prices).sum())
         frame = frame.loc[valid_prices]
-        frames.append(frame[["date", "symbol", "open", "high", "low", "close", "amount"]])
+        columns = ["date", "symbol", "open", "high", "low", "close", "amount"]
+        if "raw_close" in frame.columns:
+            columns.append("raw_close")
+        frames.append(frame[columns])
     combined = pd.concat(frames, ignore_index=True).sort_values(["symbol", "date"])
     combined.attrs["dropped_bad_price_rows"] = bad_price_rows
     return combined
@@ -109,7 +116,9 @@ def build_panel(prices: pd.DataFrame, horizon: int = 5,
         stock["exit_open"] = stock["open"].shift(-1 - horizon)
         stock["entry_date"] = entry_dates
         stock["exit_date"] = exit_dates
-        frames.append(stock.reset_index()[["date", "symbol", "close", "amount", *FACTOR_COLUMNS,
+        if "raw_close" not in stock.columns:
+            stock["raw_close"] = stock["close"]
+        frames.append(stock.reset_index()[["date", "symbol", "close", "raw_close", "amount", *FACTOR_COLUMNS,
                                           "entry_date", "entry_open", "exit_date", "exit_open", "fwd_ret"]])
     panel = pd.concat(frames, ignore_index=True)
     numeric = [*FACTOR_COLUMNS, "fwd_ret", "entry_open", "exit_open"]
@@ -120,7 +129,8 @@ def build_panel(prices: pd.DataFrame, horizon: int = 5,
 def filter_signals(panel: pd.DataFrame, membership: pd.DataFrame | None = None,
                    min_amount: float = 20_000_000) -> pd.DataFrame:
     """All screens depend only on information available by close t."""
-    frame = panel.loc[(panel["close"] >= 2) & (panel["amount"] >= min_amount)].copy()
+    price_for_screen = panel["raw_close"].fillna(panel["close"]) if "raw_close" in panel else panel["close"]
+    frame = panel.loc[(price_for_screen >= 2) & (panel["amount"] >= min_amount)].copy()
     if membership is not None:
         frame = frame.merge(membership.assign(_member=True), on=["date", "symbol"], how="inner",
                             validate="one_to_one")
